@@ -27,27 +27,35 @@
       <h1>AMZ Downloader</h1>
     </header>
 
-    <div id="status-message" class="info">Initializing...</div>
-
-    <div class="actions">
-      <button id="download-images-btn" class="primary-btn">Download ALL Images (ZIP)</button>
+    <!-- STATUS -->
+    <div class="status-box">
+      <div id="status-message">Ready. Click Start.</div>
+      <div id="scan-controls">
+        <button id="start-scan-btn" class="primary-btn">Start Scanning</button>
+      </div>
     </div>
 
-    <div class="content-wrapper">
-      <div class="column" id="main-images-col">
-        <h3>Main Product (<span id="count-main">0</span>)</h3>
+    <!-- RESULTS -->
+    <div class="results-container">
+      <!-- Main Images Column -->
+      <div class="column">
+        <h3>Main Images (<span id="count-main">0</span>)</h3>
         <div class="image-grid" id="main-images-grid"></div>
       </div>
 
-      <div class="column" id="variant-images-col">
-        <h3>Variants (<span id="count-vars">0</span>)</h3>
+      <!-- Variant Images Column -->
+      <div class="column">
+        <h3>Variant Images (<span id="count-vars">0</span>)</h3>
         <div class="image-grid" id="variant-images-grid"></div>
       </div>
+    </div>
 
-      <div class="column" id="videos-col">
-        <!-- Hidden -->
-        <h3>Videos (<span id="count-videos">0</span>)</h3>
-        <div class="video-list" id="videos-list"></div>
+    <!-- ACTIONS -->
+    <div class="actions" style="display: none; flex-direction: column; gap: 8px;">
+      <button id="download-all-btn" class="action-btn">Download ALL (.zip)</button>
+      <div style="display: flex; gap: 8px; width: 100%;">
+        <button id="dl-main-btn" class="action-btn secondary">Main Only</button>
+        <button id="dl-var-btn" class="action-btn secondary">Variants Only</button>
       </div>
     </div>
   </div>

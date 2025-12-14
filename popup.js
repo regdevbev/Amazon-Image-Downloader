@@ -1,6 +1,9 @@
-// popup.js - Robust Connection Handling
+// popup.js - V23 Manual Controls
 let scrapedData = { mainImages: [], variantImages: [], videos: [], title: "" };
 const statusMsg = document.getElementById('status-message');
+const startBtn = document.getElementById('start-scan-btn');
+const controlsDiv = document.getElementById('scan-controls');
+const actionsDiv = document.querySelector('.actions');
 
 function showStatus(msg, type = 'info') {
     statusMsg.textContent = msg;
@@ -8,9 +11,7 @@ function showStatus(msg, type = 'info') {
     if (type === 'error') {
         const btn = document.createElement('button');
         btn.textContent = "Refresh Page";
-        btn.style.marginTop = "10px";
-        btn.style.padding = "5px 10px";
-        btn.style.cursor = "pointer";
+        Object.assign(btn.style, { marginTop: "10px", padding: "5px 10px", cursor: "pointer" });
         btn.onclick = () => chrome.tabs.reload();
         statusMsg.appendChild(document.createElement('br'));
         statusMsg.appendChild(btn);
@@ -36,51 +37,87 @@ function render(data) {
     data.variantImages.forEach(u => addImg(u, varGrid));
 }
 
-// AUTO START with Error Handling
-chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-    if (!tabs[0]) return;
+// START BUTTON HANDLER
+startBtn.addEventListener('click', () => {
+    // Hide start button
+    controlsDiv.style.display = 'none';
+    statusMsg.textContent = "Initializing connection...";
 
-    if (tabs[0].url.includes("amazon")) {
-        statusMsg.textContent = "Connecting to page...";
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+        if (!tabs[0] || !tabs[0].url.includes("amazon")) {
+            showStatus("Not an Amazon Page.", "error");
+            return;
+        }
 
-        // Simple Ping to check connection
+        // Ping -> AutoPilot
         chrome.tabs.sendMessage(tabs[0].id, { action: "ping" }, response => {
             if (chrome.runtime.lastError) {
-                // This catches the "Receiving end does not exist"
-                console.warn("Connection error:", chrome.runtime.lastError);
-                showStatus("Extension Updated. Please Refresh This Page.", "error");
+                console.warn(chrome.runtime.lastError);
+                showStatus("Please Refresh Page.", "error");
                 return;
             }
 
-            // If ping success, run autoPilot
-            statusMsg.textContent = "Scanning Variants (V13 Universal)...";
+            statusMsg.textContent = "Scanning... (Do not close)";
             chrome.tabs.sendMessage(tabs[0].id, { action: "autoPilot" }, resp => {
-                if (chrome.runtime.lastError) {
-                    showStatus("Scan Failed. Please Refresh.", "error");
+                if (chrome.runtime.lastError || !resp) {
+                    showStatus("Scan Failed.", "error");
+                    controlsDiv.style.display = 'block'; // Show button again
                     return;
                 }
-                if (resp) {
-                    scrapedData = resp;
-                    render(resp);
-                    statusMsg.textContent = "Done!";
-                    document.querySelector('.actions').style.display = 'flex';
-                }
+
+                // Success
+                scrapedData = resp;
+                render(resp);
+                statusMsg.textContent = "Scan Complete!";
+                actionsDiv.style.display = 'flex';
             });
         });
-    } else {
-        showStatus("Not an Amazon Product Page.", "error");
-    }
+    });
 });
 
-document.getElementById('download-images-btn').addEventListener('click', async () => {
+// DOWNLOAD HELPERS
+async function downloadImages(images, folderName, zipName) {
+    if (!images || images.length === 0) return;
+    const z = new JSZip();
+    const folder = z.folder(folderName);
+
+    statusMsg.textContent = `Zipping ${images.length} images...`;
+
+    for (let i = 0; i < images.length; i++) {
+        try {
+            const blob = await (await fetch(images[i])).blob();
+            folder.file(`${folderName}_${i + 1}.jpg`, blob);
+        } catch (e) { console.error(e); }
+    }
+
+    const b = await z.generateAsync({ type: "blob" });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = zipName;
+    a.click();
+    statusMsg.textContent = "Done!";
+}
+
+// BUTTON LISTENERS
+document.getElementById('download-all-btn').addEventListener('click', async () => {
     const z = new JSZip();
     const mainF = z.folder("Main_Product");
     const varF = z.folder("Variants");
+
     for (let i = 0; i < scrapedData.mainImages.length; i++)
-        try { mainF.file(`main_${i}.jpg`, await (await fetch(scrapedData.mainImages[i])).blob()); } catch (e) { }
+        try { mainF.file(`main_${i + 1}.jpg`, await (await fetch(scrapedData.mainImages[i])).blob()); } catch (e) { }
+
     for (let i = 0; i < scrapedData.variantImages.length; i++)
-        try { varF.file(`variant_${i}.jpg`, await (await fetch(scrapedData.variantImages[i])).blob()); } catch (e) { }
+        try { varF.file(`variant_${i + 1}.jpg`, await (await fetch(scrapedData.variantImages[i])).blob()); } catch (e) { }
 
     const b = await z.generateAsync({ type: "blob" });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = "amazon_images.zip"; a.click();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = "amazon_all_images.zip"; a.click();
+});
+
+document.getElementById('dl-main-btn').addEventListener('click', () => {
+    downloadImages(scrapedData.mainImages, "Main_Images", "amazon_main_images.zip");
+});
+
+document.getElementById('dl-var-btn').addEventListener('click', () => {
+    downloadImages(scrapedData.variantImages, "Variant_Images", "amazon_variant_images.zip");
 });
