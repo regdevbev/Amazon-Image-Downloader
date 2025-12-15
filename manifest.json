@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "downloads"
+    "downloads",
+    "storage"
   ],
   "host_permissions": [
     "*://*.amazon.com/*",
@@ -45,7 +46,9 @@
         "*://*.amazon.com.au/*",
         "*://*.amazon.in/*"
       ],
-      "js": ["content.js"]
+      "js": [
+        "content.js"
+      ]
     }
   ],
   "icons": {

@@ -1,123 +1,157 @@
-// popup.js - V23 Manual Controls
-let scrapedData = { mainImages: [], variantImages: [], videos: [], title: "" };
+// popup.js - V25 In-Memory Logic
+let scrapingData = { mainImages: [], variantImages: [] };
 const statusMsg = document.getElementById('status-message');
 const startBtn = document.getElementById('start-scan-btn');
+const startMainBtn = document.getElementById('start-main-btn');
 const controlsDiv = document.getElementById('scan-controls');
 const actionsDiv = document.querySelector('.actions');
 
 function showStatus(msg, type = 'info') {
+    if (!statusMsg) return;
     statusMsg.textContent = msg;
     statusMsg.className = type;
-    if (type === 'error') {
-        const btn = document.createElement('button');
-        btn.textContent = "Refresh Page";
-        Object.assign(btn.style, { marginTop: "10px", padding: "5px 10px", cursor: "pointer" });
-        btn.onclick = () => chrome.tabs.reload();
-        statusMsg.appendChild(document.createElement('br'));
-        statusMsg.appendChild(btn);
-    }
 }
 
 function render(data) {
-    document.getElementById('count-main').textContent = data.mainImages.length;
-    document.getElementById('count-vars').textContent = data.variantImages.length;
+    if (!data) return;
+    scrapingData = data;
+
+    document.getElementById('count-main').textContent = data.mainImages ? data.mainImages.length : 0;
+    document.getElementById('count-vars').textContent = data.variantImages ? data.variantImages.length : 0;
 
     const mainGrid = document.getElementById('main-images-grid');
     const varGrid = document.getElementById('variant-images-grid');
-    mainGrid.innerHTML = ''; varGrid.innerHTML = '';
+    if (mainGrid) mainGrid.innerHTML = '';
+    if (varGrid) varGrid.innerHTML = '';
 
     const addImg = (u, p) => {
+        if (!p) return;
         const i = document.createElement('img');
         i.src = u; i.className = 'image-item';
         i.onclick = () => chrome.downloads.download({ url: u });
         p.appendChild(i);
     };
 
-    data.mainImages.forEach(u => addImg(u, mainGrid));
-    data.variantImages.forEach(u => addImg(u, varGrid));
+    if (data.mainImages) data.mainImages.forEach(u => addImg(u, mainGrid));
+    if (data.variantImages) data.variantImages.forEach(u => addImg(u, varGrid));
 }
 
-// START BUTTON HANDLER
-startBtn.addEventListener('click', () => {
-    // Hide start button
-    controlsDiv.style.display = 'none';
-    statusMsg.textContent = "Initializing connection...";
-
+function init() {
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
         if (!tabs[0] || !tabs[0].url.includes("amazon")) {
-            showStatus("Not an Amazon Page.", "error");
-            return;
+            showStatus("Not Amazon.", "error"); return;
         }
 
-        // Ping -> AutoPilot
-        chrome.tabs.sendMessage(tabs[0].id, { action: "ping" }, response => {
+        // ASK CONTENT SCRIPT FOR DATA
+        chrome.tabs.sendMessage(tabs[0].id, { action: "getData" }, response => {
             if (chrome.runtime.lastError) {
-                console.warn(chrome.runtime.lastError);
-                showStatus("Please Refresh Page.", "error");
+                // Content script might not be injected yet or disconnected
+                console.log("No content script check");
                 return;
             }
 
-            statusMsg.textContent = "Scanning... (Do not close)";
-            chrome.tabs.sendMessage(tabs[0].id, { action: "autoPilot" }, resp => {
-                if (chrome.runtime.lastError || !resp) {
+            if (response && (response.mainImages.length > 0 || response.variantImages.length > 0)) {
+                // WE HAVE DATA! Restore it.
+                if (controlsDiv) controlsDiv.style.display = 'none';
+                render(response);
+                showStatus("Restored from page memory.", "success");
+                if (actionsDiv) actionsDiv.style.display = 'flex';
+            } else {
+                // NO DATA. Show Start.
+                // This happens on Fresh Load OR Refresh. perfect.
+            }
+        });
+    });
+}
+
+function startScan(onlyMain = false) {
+    if (controlsDiv) controlsDiv.style.display = 'none';
+    showStatus("Connecting...", "info");
+
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+        const tid = tabs[0].id;
+
+        // PING
+        chrome.tabs.sendMessage(tid, { action: "ping" }, () => {
+            if (chrome.runtime.lastError) {
+                showStatus("Please Refresh Page.", "error"); return;
+            }
+
+            showStatus(onlyMain ? "Scanning Main Only..." : "Scanning...", "info");
+
+            // RUN
+            chrome.tabs.sendMessage(tid, {
+                action: "autoPilot",
+                options: { onlyMain }
+            }, resp => {
+                if (!resp) {
                     showStatus("Scan Failed.", "error");
-                    controlsDiv.style.display = 'block'; // Show button again
+                    if (controlsDiv) controlsDiv.style.display = 'block';
                     return;
                 }
 
-                // Success
-                scrapedData = resp;
+                // RENDER
                 render(resp);
-                statusMsg.textContent = "Scan Complete!";
-                actionsDiv.style.display = 'flex';
+                showStatus("Done!", "success");
+                if (actionsDiv) actionsDiv.style.display = 'flex';
             });
         });
     });
-});
-
-// DOWNLOAD HELPERS
-async function downloadImages(images, folderName, zipName) {
-    if (!images || images.length === 0) return;
-    const z = new JSZip();
-    const folder = z.folder(folderName);
-
-    statusMsg.textContent = `Zipping ${images.length} images...`;
-
-    for (let i = 0; i < images.length; i++) {
-        try {
-            const blob = await (await fetch(images[i])).blob();
-            folder.file(`${folderName}_${i + 1}.jpg`, blob);
-        } catch (e) { console.error(e); }
-    }
-
-    const b = await z.generateAsync({ type: "blob" });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(b);
-    a.download = zipName;
-    a.click();
-    statusMsg.textContent = "Done!";
 }
 
-// BUTTON LISTENERS
-document.getElementById('download-all-btn').addEventListener('click', async () => {
-    const z = new JSZip();
-    const mainF = z.folder("Main_Product");
-    const varF = z.folder("Variants");
+document.addEventListener('DOMContentLoaded', () => {
+    init();
+    if (startBtn) startBtn.addEventListener('click', () => startScan(false));
+    if (startMainBtn) startMainBtn.addEventListener('click', () => startScan(true));
 
-    for (let i = 0; i < scrapedData.mainImages.length; i++)
-        try { mainF.file(`main_${i + 1}.jpg`, await (await fetch(scrapedData.mainImages[i])).blob()); } catch (e) { }
+    // EXPORT CSV
+    const csvBtn = document.getElementById('export-csv-btn');
+    if (csvBtn) csvBtn.addEventListener('click', () => {
+        let csvContent = "data:text/csv;charset=utf-8,Type,ImageUrl\n";
+        scrapingData.mainImages.forEach(u => csvContent += `Main,${u}\n`);
+        scrapingData.variantImages.forEach(u => csvContent += `Variant,${u}\n`);
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "amazon_media_list.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
 
-    for (let i = 0; i < scrapedData.variantImages.length; i++)
-        try { varF.file(`variant_${i + 1}.jpg`, await (await fetch(scrapedData.variantImages[i])).blob()); } catch (e) { }
+    // ZIPS
+    async function downloadImages(images, folderName, zipName) {
+        if (!images || images.length === 0) return;
+        const z = new JSZip();
+        const folder = z.folder(folderName);
+        showStatus(`Zipping...`, "info");
+        for (let i = 0; i < images.length; i++) {
+            try {
+                const blob = await (await fetch(images[i])).blob();
+                folder.file(`${folderName}_${i + 1}.jpg`, blob);
+            } catch (e) { }
+        }
+        const b = await z.generateAsync({ type: "blob" });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = zipName; a.click();
+        showStatus("Done!", "success");
+    }
 
-    const b = await z.generateAsync({ type: "blob" });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = "amazon_all_images.zip"; a.click();
-});
+    const dlAll = document.getElementById('download-all-btn');
+    if (dlAll) dlAll.addEventListener('click', async () => {
+        const z = new JSZip();
+        const mainF = z.folder("Main_Product");
+        const varF = z.folder("Variants");
+        for (let i = 0; i < scrapingData.mainImages.length; i++)
+            try { mainF.file(`main_${i + 1}.jpg`, await (await fetch(scrapingData.mainImages[i])).blob()); } catch (e) { }
+        for (let i = 0; i < scrapingData.variantImages.length; i++)
+            try { varF.file(`variant_${i + 1}.jpg`, await (await fetch(scrapingData.variantImages[i])).blob()); } catch (e) { }
+        const b = await z.generateAsync({ type: "blob" });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = "amazon_all_images.zip"; a.click();
+    });
 
-document.getElementById('dl-main-btn').addEventListener('click', () => {
-    downloadImages(scrapedData.mainImages, "Main_Images", "amazon_main_images.zip");
-});
+    if (document.getElementById('dl-main-btn'))
+        document.getElementById('dl-main-btn').addEventListener('click', () => downloadImages(scrapingData.mainImages, "Main", "main.zip"));
 
-document.getElementById('dl-var-btn').addEventListener('click', () => {
-    downloadImages(scrapedData.variantImages, "Variant_Images", "amazon_variant_images.zip");
+    if (document.getElementById('dl-var-btn'))
+        document.getElementById('dl-var-btn').addEventListener('click', () => downloadImages(scrapingData.variantImages, "Vars", "vars.zip"));
 });

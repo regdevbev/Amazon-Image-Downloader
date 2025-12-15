@@ -31,7 +31,9 @@
     <div class="status-box">
       <div id="status-message">Ready. Click Start.</div>
       <div id="scan-controls">
-        <button id="start-scan-btn" class="primary-btn">Start Scanning</button>
+        <button id="start-scan-btn" class="primary-btn">Start Full Scan</button>
+        <button id="start-main-btn" class="secondary-btn"
+          style="margin-top: 5px; background-color: #444; color:white;">Scan Main Only</button>
       </div>
     </div>
 
@@ -57,6 +59,8 @@
         <button id="dl-main-btn" class="action-btn secondary">Main Only</button>
         <button id="dl-var-btn" class="action-btn secondary">Variants Only</button>
       </div>
+      <button id="export-csv-btn" class="action-btn"
+        style="background-color: #232f3e; color:white; border: 1px solid #555;">Export CSV List</button>
     </div>
   </div>
   <script src="lib/jszip.min.js"></script>
